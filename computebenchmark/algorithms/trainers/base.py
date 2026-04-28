@@ -194,11 +194,14 @@ class BaseTrainer(ABC):
         out_dir.mkdir(parents=True, exist_ok=True)
         log_path = out_dir / "metrics.jsonl"
 
+        tag = f"[{method_name.upper():<10}]"
         metrics_log = []
         tokens_seen = 0
         convergence: ConvergenceResult | None = None
         t_start = time.perf_counter()
         step = 0
+
+        print(f"\n{tag} Starting — {self.config.num_steps} steps, eval every {self.config.eval_every}", flush=True)
 
         while step < self.config.num_steps:
             for i in range(0, len(dataset), self.config.batch_size):
@@ -221,8 +224,11 @@ class BaseTrainer(ABC):
 
                     acc = step_metrics.get("gsm8k_accuracy", 0.0)
                     elapsed = step_metrics["wall_clock_seconds"]
+                    target_str = f"  target={self.config.target_accuracy:.3f}" if self.config.target_accuracy else ""
                     print(
-                        f"  step={step:>4}  acc={acc:.3f}  reward={step_metrics['mean_reward']:.3f}"
+                        f"{tag} step={step:>4}/{self.config.num_steps}"
+                        f"  acc={acc:.3f}{target_str}"
+                        f"  reward={step_metrics['mean_reward']:.3f}"
                         f"  tokens={tokens_seen:,}  elapsed={elapsed/60:.1f}min",
                         flush=True,
                     )
@@ -243,11 +249,13 @@ class BaseTrainer(ABC):
                             final_step=step,
                             final_wall_clock_seconds=elapsed,
                         )
-                        print(f"  *** Target {self.config.target_accuracy:.3f} reached at step {step} ({elapsed/60:.1f}min) ***", flush=True)
+                        print(f"{tag} *** TARGET {self.config.target_accuracy:.3f} REACHED — step={step} elapsed={elapsed/60:.1f}min ***", flush=True)
                 else:
                     print(
-                        f"  step={step:>4}  reward={step_metrics['mean_reward']:.3f}"
-                        f"  std={step_metrics['reward_std']:.3f}  elapsed={step_metrics['wall_clock_seconds']/60:.1f}min",
+                        f"{tag} step={step:>4}/{self.config.num_steps}"
+                        f"  reward={step_metrics['mean_reward']:.3f}"
+                        f"  std={step_metrics['reward_std']:.3f}"
+                        f"  elapsed={step_metrics['wall_clock_seconds']/60:.1f}min",
                         flush=True,
                     )
 
