@@ -121,7 +121,7 @@ def algo_race(
 
     # ── Phase 1: run PPO baseline ─────────────────────────────────────────────
     typer.echo(f"\n{'='*60}")
-    typer.echo(f"Phase 1: PPO baseline for {baseline_steps} steps")
+    typer.echo(f"Phase 1: REINFORCE baseline for {baseline_steps} steps")
     typer.echo(f"{'='*60}")
 
     ppo_config = TrainingConfig(
@@ -132,7 +132,7 @@ def algo_race(
     )
     _, ppo_convergence = get_trainer("ppo")(ppo_config).train(train_ds, eval_ds)
     target_accuracy = ppo_convergence.final_accuracy
-    typer.echo(f"\nPPO final accuracy: {target_accuracy:.3f} — this is the target.")
+    typer.echo(f"\nREINFORCE final accuracy: {target_accuracy:.3f} — this is the target.")
 
     # ── Phase 2: challengers race to match PPO ────────────────────────────────
     all_results = {"ppo": asdict(ppo_convergence)}
