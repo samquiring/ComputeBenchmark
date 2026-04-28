@@ -8,8 +8,15 @@ from peft import LoraConfig
 try:
     from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer
 except ImportError:
-    from trl.models import AutoModelForCausalLMWithValueHead
-    from trl import PPOConfig, PPOTrainer
+    try:
+        from trl.models.modeling_value_head import AutoModelForCausalLMWithValueHead
+        from trl import PPOConfig, PPOTrainer
+    except ImportError:
+        import trl as _trl
+        raise ImportError(
+            f"AutoModelForCausalLMWithValueHead not found in TRL {_trl.__version__}. "
+            "Downgrade with: pip install 'trl>=0.9.0,<0.15.0'"
+        )
 from transformers import AutoTokenizer
 
 from .base import TrainingConfig
