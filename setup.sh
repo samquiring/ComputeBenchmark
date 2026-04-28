@@ -23,18 +23,16 @@ if [ "${SM}" -ge 10 ]; then
     pip install "flash-attn-4[cu13]" -q
 
 elif [ "${SM}" -ge 9 ]; then
-    echo "==> Hopper (SM${SM}) — installing flash-attn-3 for cu${CUDA_VER} torch${TORCH_VER}"
-    INDEX_URL="https://windreamer.github.io/flash-attention3-wheels/cu${CUDA_VER}torch${TORCH_VER}/"
-    echo "    index: ${INDEX_URL}"
+    echo "==> Hopper (SM${SM}) — installing flash_attn_3 for cu${CUDA_VER} torch${TORCH_VER}"
+    FIND_LINKS="https://windreamer.github.io/flash-attention3-wheels/cu${CUDA_VER}_torch${TORCH_VER}"
+    echo "    find-links: ${FIND_LINKS}"
 
-    if pip install flash-attn-3 --index-url "${INDEX_URL}" -q 2>/dev/null; then
-        echo "    installed via windreamer index"
+    if pip install flash_attn_3 --find-links "${FIND_LINKS}" -q 2>/dev/null; then
+        echo "    installed via windreamer"
     else
-        echo "    windreamer index miss — trying mjun0812 prebuilt wheels"
-        pip install flash_attn_3 \
-            --find-links "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/" \
-            --no-build-isolation -q || \
-        echo "⚠  FA3 prebuilt not found for cu${CUDA_VER}/torch${TORCH_VER}. Build from source: pip install flash-attn --no-build-isolation"
+        echo "⚠  FA3 prebuilt not found for cu${CUDA_VER}_torch${TORCH_VER}."
+        echo "   Browse available indexes at: https://windreamer.github.io/flash-attention3-wheels/"
+        echo "   Then run: pip install flash_attn_3 --find-links <matching-url>"
     fi
 
 elif [ "${SM}" -ge 8 ]; then
