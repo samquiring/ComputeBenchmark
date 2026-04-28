@@ -1,0 +1,16 @@
+[project]
+name = "computebenchmark"
+version = "0.1.0"
+description = "Benchmark comparing multiple RL and compute configurations"
+authors = [
+    {name = "Sam Quiring",email = "lafcrules@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
