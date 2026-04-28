@@ -2,7 +2,7 @@ import importlib
 
 _REGISTRY = {
     "ppo": ("ppo", "PPOTrainerWrapper"),
-    "grpo": ("grpo", "GRPOTrainer"),
+    "grpo": ("grpo", "GRPOTrainerWrapper"),
     "dapo": ("dapo", "DAPOTrainer"),
     "rlvr": ("rlvr", "RLVRTrainer"),
 }

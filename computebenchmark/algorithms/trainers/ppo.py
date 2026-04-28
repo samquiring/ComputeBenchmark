@@ -1,49 +1,39 @@
-"""REINFORCE baseline trainer.
+"""REINFORCE baseline trainer (registered as 'ppo' for CLI compatibility).
 
-Replaces TRL's PPO as the baseline. REINFORCE is the simplest policy gradient
-algorithm: no critic, no group normalization, no clipping. A moving average of
-recent rewards serves as the variance-reducing baseline.
-
-This gives a cleaner paper story: REINFORCE → GRPO → DAPO is a monotonic
-progression of algorithmic improvements, each adding one mechanism.
+Uses GRPOTrainer with tight epsilon (no effective clipping) and no KL penalty
+to approximate vanilla REINFORCE with group-relative advantage normalization.
+This gives a cleaner paper baseline than custom REINFORCE: GRPO baseline → GRPO → DAPO.
 """
 
-import torch
+from trl import GRPOConfig
 
-from .base import BaseTrainer, TrainingConfig
+from .grpo import GRPOTrainerWrapper
 
 
-class PPOTrainerWrapper(BaseTrainer):
-    """REINFORCE with a moving-average reward baseline.
+class PPOTrainerWrapper(GRPOTrainerWrapper):
+    """REINFORCE-style baseline using GRPOTrainer.
 
-    Named PPOTrainerWrapper to keep the registry key 'ppo' unchanged so
-    existing commands don't break, but the implementation is TRL-free.
+    Clipping disabled (epsilon=1.0 so ratio bounds never bite),
+    KL penalty removed (beta=0). Pure policy gradient with group baseline.
     """
 
-    def __init__(self, config: TrainingConfig):
-        super().__init__(config)
-        self._reward_baseline = 0.0
-        self._baseline_momentum = 0.99
-
-    def _compute_advantages(self, rewards: list[float]) -> torch.Tensor:
-        # Update moving average baseline
-        for r in rewards:
-            self._reward_baseline = (
-                self._baseline_momentum * self._reward_baseline
-                + (1 - self._baseline_momentum) * r
-            )
-        return torch.tensor(
-            [r - self._reward_baseline for r in rewards], dtype=torch.float32
+    def _make_grpo_config(self) -> GRPOConfig:
+        c = self.config
+        return GRPOConfig(
+            output_dir=c.output_dir,
+            per_device_train_batch_size=c.batch_size,
+            num_generations=c.group_size,
+            max_prompt_length=c.max_prompt_len,
+            max_completion_length=c.max_response_len,
+            max_steps=c.num_steps,
+            learning_rate=c.learning_rate,
+            beta=0.0,      # no KL penalty
+            epsilon=1.0,   # clip bounds [0, 2] — never active
+            bf16=True,
+            gradient_checkpointing=True,
+            use_vllm=c.use_vllm,
+            save_steps=c.save_every,
+            logging_steps=1,
+            report_to="none",
+            dataloader_pin_memory=False,
         )
-
-    def _compute_loss(
-        self,
-        policy_lps: list[torch.Tensor],
-        ref_lps: list[torch.Tensor],
-        advantages: torch.Tensor,
-    ) -> torch.Tensor:
-        total = torch.tensor(0.0, device=self.model.device)
-        for p_lp, adv in zip(policy_lps, advantages):
-            pg_loss = -(p_lp.mean() * adv)
-            total = total + pg_loss
-        return total / len(policy_lps)

@@ -88,12 +88,13 @@ def algo_train(
 
     typer.echo(f"Starting {method.upper()} training on {model_id} for {steps} steps...")
     trainer = get_trainer(method)(config)
-    metrics = trainer.train(train_ds, eval_dataset=eval_ds)
+    metrics_log, convergence = trainer.train(train_ds, eval_dataset=eval_ds)
 
     typer.echo(f"\nTraining complete. Logs at {config.output_dir}/metrics.jsonl")
-    if metrics:
-        final = metrics[-1]
-        typer.echo(f"Final step metrics: {final}")
+    if metrics_log:
+        typer.echo(f"Final step metrics: {metrics_log[-1]}")
+    if convergence:
+        typer.echo(f"Final accuracy: {convergence.final_accuracy:.3f}")
 
 
 @algo_app.command("race")

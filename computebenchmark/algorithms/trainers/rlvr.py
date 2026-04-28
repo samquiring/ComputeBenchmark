@@ -1,17 +1,27 @@
-from .grpo import GRPOTrainer
+"""RLVR: Reinforcement Learning from Verifiable Rewards.
+
+Architecturally identical to GRPO. The distinction is explicit: reward is
+strictly binary (1 = exact numerical match, 0 = otherwise). No format bonuses,
+no partial credit, no learned reward model at any stage.
+"""
+
+from .grpo import GRPOTrainerWrapper
 
 
-class RLVRTrainer(GRPOTrainer):
-    """Reinforcement Learning from Verifiable Rewards.
+class RLVRTrainer(GRPOTrainerWrapper):
+    """GRPO with an unambiguous binary verifier reward.
 
-    Architecturally identical to GRPO; the distinction is conceptual: no neural
-    reward model is used at any stage. Reward is strictly binary (1 for correct
-    numerical answer, 0 otherwise). This is the default in GRPOTrainer but made
-    explicit here so the paper can discuss it as a separate ablation condition.
+    Listed separately so the paper can discuss the reward-signal design choice
+    as an independent axis from the optimization algorithm (GRPO).
     """
 
-    def _compute_reward(self, response: str, ground_truth: str) -> float:
+    def _reward_funcs(self) -> list:
         from ...data.gsm8k import extract_answer
-        predicted = extract_answer(response)
-        # Strict match only — no format bonuses, no partial credit
-        return 1.0 if predicted is not None and predicted == ground_truth else 0.0
+
+        def binary_reward(completions: list[str], answer: list[str], **kwargs) -> list[float]:
+            return [
+                1.0 if extract_answer(c) == a else 0.0
+                for c, a in zip(completions, answer)
+            ]
+
+        return [binary_reward]
