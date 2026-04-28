@@ -54,9 +54,9 @@ class PPOTrainerWrapper:
             learning_rate=self.config.learning_rate,
             batch_size=self.config.batch_size,
             mini_batch_size=max(1, self.config.batch_size // 2),
-            ppo_epochs=self.config.ppo_epochs,
-            init_kl_coef=self.config.init_kl_coef,
-            target=self.config.target_kl,
+            ppo_epochs=getattr(self.config, "ppo_epochs", 4),
+            init_kl_coef=getattr(self.config, "init_kl_coef", 0.2),
+            target=getattr(self.config, "target_kl", 6.0),
             log_with=None,
         )
 
