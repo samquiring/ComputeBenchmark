@@ -59,7 +59,10 @@ class BaseTrainer(ABC):
 
     def _load_model(self) -> AutoModelForCausalLM:
         model = AutoModelForCausalLM.from_pretrained(
-            self.config.model_id, torch_dtype=torch.bfloat16, device_map="auto"
+            self.config.model_id,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            attn_implementation="flash_attention_3",
         )
         lora_cfg = LoraConfig(
             r=self.config.lora_rank,
