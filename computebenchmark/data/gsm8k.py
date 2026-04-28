@@ -14,14 +14,17 @@ def extract_answer(text: str) -> str | None:
     return m.group(1).replace(",", "").strip() if m else None
 
 
-def make_prompt(question: str, tokenizer: PreTrainedTokenizer) -> str:
+def make_prompt(question: str, tokenizer: PreTrainedTokenizer, enable_thinking: bool = False) -> str:
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": question},
     ]
-    return tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
+    kwargs: dict = {"tokenize": False, "add_generation_prompt": True}
+    # Qwen3 models support an enable_thinking flag; ignored by other tokenizers
+    try:
+        return tokenizer.apply_chat_template(messages, enable_thinking=enable_thinking, **kwargs)
+    except TypeError:
+        return tokenizer.apply_chat_template(messages, **kwargs)
 
 
 def build_dataset(tokenizer: PreTrainedTokenizer, split: str = "train"):
