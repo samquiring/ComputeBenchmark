@@ -52,9 +52,9 @@ def _measure_prefill(
 def _measure_decode(
     model: AutoModelForCausalLM,
     input_ids: torch.Tensor,
-    gen_len: int,
     monitor: GPUMonitor,
     iterations: int,
+    gen_len: int = 256,
 ) -> tuple[float, float, list]:
     snapshots = []
     _sync()
