@@ -56,7 +56,8 @@ print(f"  SM         {torch.cuda.get_device_capability()}")
 for pkg in ("flash_attn", "flash_attn_3", "flash_attn_4"):
     try:
         m = __import__(pkg)
-        print(f"  {pkg:<14} {m.__version__}")
+        version = getattr(m, "__version__", "installed")
+        print(f"  {pkg:<14} {version}")
     except ImportError:
         pass
 
