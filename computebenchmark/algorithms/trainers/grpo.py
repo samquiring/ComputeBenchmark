@@ -1,3 +1,4 @@
+import math
 import torch
 from transformers import AutoModelForCausalLM
 from trl import GRPOConfig, GRPOTrainer
@@ -25,14 +26,14 @@ class GRPOTrainerWrapper(BaseTRLWrapper):
 
     def _make_grpo_config(self) -> GRPOConfig:
         c = self.config
-        return GRPOConfig(
+        gen_batch = math.ceil(c.batch_size / c.group_size) * c.group_size
+        cfg = GRPOConfig(
             output_dir=c.output_dir,
             per_device_train_batch_size=c.batch_size,
             num_generations=c.group_size,
             max_prompt_length=c.max_prompt_len,
             max_completion_length=c.max_response_len,
             max_steps=c.num_steps,
-            learning_rate=c.learning_rate,
             beta=c.kl_coeff,
             epsilon=c.clip_eps,
             bf16=True,
@@ -43,6 +44,11 @@ class GRPOTrainerWrapper(BaseTRLWrapper):
             report_to="none",
             dataloader_pin_memory=False,
         )
+        # Set via attribute to avoid version-specific __init__ signature issues
+        cfg.learning_rate = c.learning_rate
+        if hasattr(cfg, "generation_batch_size"):
+            cfg.generation_batch_size = gen_batch
+        return cfg
 
     def _reward_funcs(self) -> list:
         return [gsm8k_accuracy_reward]
