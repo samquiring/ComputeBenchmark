@@ -3,13 +3,25 @@ name = "computebenchmark"
 version = "0.1.0"
 description = "Benchmark comparing multiple RL and compute configurations"
 authors = [
-    {name = "Sam Quiring",email = "lafcrules@gmail.com"}
+    {name = "Sam Quiring", email = "lafcrules@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "torch>=2.4.0",
+    "transformers>=4.45.0",
+    "datasets>=3.0.0",
+    "trl>=0.15.0",
+    "peft>=0.13.0",
+    "accelerate>=0.34.0",
+    "pynvml>=11.5.0",
+    "typer>=0.12.0",
+    "pandas>=2.2.0",
+    "tqdm>=4.66.0",
 ]
 
+[project.scripts]
+computebenchmark = "computebenchmark.cli:app"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
