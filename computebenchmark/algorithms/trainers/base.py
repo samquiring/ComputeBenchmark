@@ -19,7 +19,7 @@ class TrainingConfig:
     max_prompt_len: int = 512
     max_response_len: int = 512
     num_steps: int = 500
-    eval_every: int = 25
+    eval_every: int = 50
     save_every: int = 500
     lora_rank: int = 16
     lora_alpha: int = 32
@@ -215,15 +215,20 @@ class BaseTrainer(ABC):
 
                 step_metrics["step"] = step
                 step_metrics["tokens_seen"] = tokens_seen
-                step_metrics["wall_clock_seconds"] = time.perf_counter() - t_start
+                training_elapsed = time.perf_counter() - t_start
+                step_metrics["wall_clock_seconds"] = training_elapsed
                 step_metrics["step_seconds"] = time.perf_counter() - t_step
 
                 if step % self.config.eval_every == 0 and eval_dataset is not None:
-                    eval_result = evaluate_gsm8k(self.model, self.tokenizer, max_samples=200)
+                    t_eval = time.perf_counter()
+                    eval_result = evaluate_gsm8k(self.model, self.tokenizer, max_samples=100, max_new_tokens=256)
+                    eval_seconds = time.perf_counter() - t_eval
+                    t_start += eval_seconds  # shift start forward so eval time is excluded
                     step_metrics.update(eval_result)
+                    step_metrics["eval_seconds"] = eval_seconds
 
                     acc = step_metrics.get("gsm8k_accuracy", 0.0)
-                    elapsed = step_metrics["wall_clock_seconds"]
+                    elapsed = training_elapsed
                     target_str = f"  target={self.config.target_accuracy:.3f}" if self.config.target_accuracy else ""
                     print(
                         f"{tag} step={step:>4}/{self.config.num_steps}"

@@ -101,7 +101,7 @@ def algo_race(
     model_id: Annotated[str, typer.Option("--model-id", "-m")],
     baseline_steps: Annotated[int, typer.Option(help="Steps to run PPO baseline")] = 500,
     max_steps: Annotated[int, typer.Option(help="Step budget for challenger methods")] = 500,
-    eval_every: Annotated[int, typer.Option()] = 25,
+    eval_every: Annotated[int, typer.Option()] = 100,
     output_dir: Annotated[str, typer.Option("--output-dir", "-o")] = "/workspace/results/race",
 ):
     import json
@@ -134,8 +134,8 @@ def algo_race(
     target_accuracy = ppo_convergence.final_accuracy
     typer.echo(f"\nREINFORCE final accuracy: {target_accuracy:.3f} — this is the target.")
 
-    # ── Phase 2: challengers race to match PPO ────────────────────────────────
-    all_results = {"ppo": asdict(ppo_convergence)}
+    # ── Phase 2: challengers race to match REINFORCE ──────────────────────────
+    all_results = {"reinforce": asdict(ppo_convergence)}
 
     for method in ["grpo", "dapo", "rlvr"]:
         typer.echo(f"\n{'='*60}")
@@ -155,9 +155,9 @@ def algo_race(
     # ── Summary table ─────────────────────────────────────────────────────────
     typer.echo(f"\n{'='*60}")
     typer.echo("RESULTS SUMMARY")
-    typer.echo(f"PPO baseline: {baseline_steps} steps → {target_accuracy:.3f} accuracy\n")
+    typer.echo(f"REINFORCE baseline: {baseline_steps} steps → {target_accuracy:.3f} accuracy\n")
 
-    header = f"{'Method':<8}  {'Reached':>7}  {'Steps':>6}  {'Wall clock':>12}  {'Tokens seen':>14}  {'Final acc':>9}"
+    header = f"{'Method':<10}  {'Reached':>7}  {'Steps':>6}  {'Wall clock':>12}  {'Tokens':>12}  {'Final acc':>9}"
     typer.echo(header)
     typer.echo("-" * len(header))
 
@@ -166,7 +166,7 @@ def algo_race(
         steps = str(r["steps_to_target"]) if r["steps_to_target"] is not None else f">{max_steps}"
         wall = f"{r['wall_clock_seconds_to_target']/60:.1f}min" if r["wall_clock_seconds_to_target"] else "—"
         tokens = f"{r['tokens_seen_to_target']:,}" if r["tokens_seen_to_target"] else "—"
-        typer.echo(f"{method:<8}  {reached:>7}  {steps:>6}  {wall:>12}  {tokens:>14}  {r['final_accuracy']:>9.3f}")
+        typer.echo(f"{method:<10}  {reached:>7}  {steps:>6}  {wall:>12}  {tokens:>12}  {r['final_accuracy']:>9.3f}")
 
     results_path = f"{output_dir}/race_summary.json"
     import os; os.makedirs(output_dir, exist_ok=True)
