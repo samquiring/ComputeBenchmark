@@ -59,7 +59,7 @@ def algo_train(
     lora_rank: Annotated[int, typer.Option()] = 16,
     output_dir: Annotated[str, typer.Option("--output-dir", "-o")] = "checkpoints",
 ):
-    from .algorithms.trainers import TRAINERS
+    from .algorithms.trainers import TRAINERS, get_trainer
     from .algorithms.trainers.base import TrainingConfig
     from .data.gsm8k import build_dataset
     from transformers import AutoTokenizer
@@ -87,7 +87,7 @@ def algo_train(
     eval_ds = build_dataset(tokenizer, split="test")
 
     typer.echo(f"Starting {method.upper()} training on {model_id} for {steps} steps...")
-    trainer = TRAINERS[method](config)
+    trainer = get_trainer(method)(config)
     metrics = trainer.train(train_ds, eval_dataset=eval_ds)
 
     typer.echo(f"\nTraining complete. Logs at {config.output_dir}/metrics.jsonl")

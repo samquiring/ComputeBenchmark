@@ -4,7 +4,11 @@ from pathlib import Path
 
 import torch
 from peft import LoraConfig
-from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer
+try:
+    from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer
+except ImportError:
+    from trl.models import AutoModelForCausalLMWithValueHead
+    from trl import PPOConfig, PPOTrainer
 from transformers import AutoTokenizer
 
 from .base import TrainingConfig
