@@ -96,6 +96,85 @@ def algo_train(
         typer.echo(f"Final step metrics: {final}")
 
 
+@algo_app.command("race")
+def algo_race(
+    model_id: Annotated[str, typer.Option("--model-id", "-m")],
+    baseline_steps: Annotated[int, typer.Option(help="Steps to run PPO baseline")] = 500,
+    max_steps: Annotated[int, typer.Option(help="Step budget for challenger methods")] = 500,
+    eval_every: Annotated[int, typer.Option()] = 25,
+    output_dir: Annotated[str, typer.Option("--output-dir", "-o")] = "/workspace/results/race",
+):
+    import json
+    from dataclasses import asdict
+    from transformers import AutoTokenizer
+    from .algorithms.trainers import TRAINERS, get_trainer
+    from .algorithms.trainers.base import TrainingConfig
+    from .data.gsm8k import build_dataset
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id, padding_side="left")
+    if not tokenizer.pad_token:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    typer.echo("Loading GSM8K...")
+    train_ds = build_dataset(tokenizer, split="train")
+    eval_ds = build_dataset(tokenizer, split="test")
+
+    # ── Phase 1: run PPO baseline ─────────────────────────────────────────────
+    typer.echo(f"\n{'='*60}")
+    typer.echo(f"Phase 1: PPO baseline for {baseline_steps} steps")
+    typer.echo(f"{'='*60}")
+
+    ppo_config = TrainingConfig(
+        model_id=model_id,
+        num_steps=baseline_steps,
+        eval_every=eval_every,
+        output_dir=f"{output_dir}/ppo",
+    )
+    _, ppo_convergence = get_trainer("ppo")(ppo_config).train(train_ds, eval_ds)
+    target_accuracy = ppo_convergence.final_accuracy
+    typer.echo(f"\nPPO final accuracy: {target_accuracy:.3f} — this is the target.")
+
+    # ── Phase 2: challengers race to match PPO ────────────────────────────────
+    all_results = {"ppo": asdict(ppo_convergence)}
+
+    for method in ["grpo", "dapo", "rlvr"]:
+        typer.echo(f"\n{'='*60}")
+        typer.echo(f"Phase 2: {method.upper()} racing to {target_accuracy:.3f}")
+        typer.echo(f"{'='*60}")
+
+        config = TrainingConfig(
+            model_id=model_id,
+            num_steps=max_steps,
+            eval_every=eval_every,
+            output_dir=f"{output_dir}/{method}",
+            target_accuracy=target_accuracy,
+        )
+        _, convergence = get_trainer(method)(config).train(train_ds, eval_ds)
+        all_results[method] = asdict(convergence)
+
+    # ── Summary table ─────────────────────────────────────────────────────────
+    typer.echo(f"\n{'='*60}")
+    typer.echo("RESULTS SUMMARY")
+    typer.echo(f"PPO baseline: {baseline_steps} steps → {target_accuracy:.3f} accuracy\n")
+
+    header = f"{'Method':<8}  {'Reached':>7}  {'Steps':>6}  {'Wall clock':>12}  {'Tokens seen':>14}  {'Final acc':>9}"
+    typer.echo(header)
+    typer.echo("-" * len(header))
+
+    for method, r in all_results.items():
+        reached = "YES" if r["reached_target"] else "NO"
+        steps = str(r["steps_to_target"]) if r["steps_to_target"] is not None else f">{max_steps}"
+        wall = f"{r['wall_clock_seconds_to_target']/60:.1f}min" if r["wall_clock_seconds_to_target"] else "—"
+        tokens = f"{r['tokens_seen_to_target']:,}" if r["tokens_seen_to_target"] else "—"
+        typer.echo(f"{method:<8}  {reached:>7}  {steps:>6}  {wall:>12}  {tokens:>14}  {r['final_accuracy']:>9.3f}")
+
+    results_path = f"{output_dir}/race_summary.json"
+    import os; os.makedirs(output_dir, exist_ok=True)
+    with open(results_path, "w") as f:
+        json.dump(all_results, f, indent=2)
+    typer.echo(f"\nFull results saved to {results_path}")
+
+
 @algo_app.command("eval")
 def algo_eval(
     checkpoint: Annotated[str, typer.Argument(help="Path to saved model checkpoint")],

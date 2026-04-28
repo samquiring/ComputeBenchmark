@@ -1,4 +1,5 @@
 import json
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,17 +15,31 @@ class TrainingConfig:
     model_id: str
     learning_rate: float = 5e-6
     batch_size: int = 4
-    group_size: int = 8  # rollouts per prompt (G)
+    group_size: int = 8
     max_prompt_len: int = 512
     max_response_len: int = 512
-    num_steps: int = 1000
-    eval_every: int = 100
+    num_steps: int = 500
+    eval_every: int = 25
     save_every: int = 500
     lora_rank: int = 16
     lora_alpha: int = 32
     clip_eps: float = 0.2
     kl_coeff: float = 0.01
     output_dir: str = "checkpoints"
+    target_accuracy: float | None = None  # stop early when this GSM8K accuracy is reached
+
+
+@dataclass
+class ConvergenceResult:
+    method: str
+    target_accuracy: float
+    reached_target: bool
+    steps_to_target: int | None
+    wall_clock_seconds_to_target: float | None
+    tokens_seen_to_target: int | None
+    final_accuracy: float
+    final_step: int
+    final_wall_clock_seconds: float
 
 
 class BaseTrainer(ABC):
@@ -107,6 +122,9 @@ class BaseTrainer(ABC):
         predicted = extract_answer(response)
         return 1.0 if predicted is not None and predicted == ground_truth else 0.0
 
+    def _tokens_in_batch(self, prompt_ids: list[torch.Tensor], response_ids: list[torch.Tensor]) -> int:
+        return sum(len(p) + len(r) for p, r in zip(prompt_ids, response_ids))
+
     @abstractmethod
     def _compute_advantages(self, rewards: list[float]) -> torch.Tensor:
         ...
@@ -130,7 +148,7 @@ class BaseTrainer(ABC):
 
     def train_step(
         self, batch_prompts: list[str], batch_answers: list[str]
-    ) -> dict:
+    ) -> tuple[dict, int]:
         prompt_ids_list, response_ids_list = self._generate_rollouts(batch_prompts)
         rewards = [
             self._compute_reward(
@@ -140,11 +158,13 @@ class BaseTrainer(ABC):
             for i, r_ids in enumerate(response_ids_list)
         ]
 
+        tokens = self._tokens_in_batch(prompt_ids_list, response_ids_list)
+
         prompt_ids_list, response_ids_list, rewards = self._select_rollouts(
             prompt_ids_list, response_ids_list, rewards
         )
         if not rewards:
-            return {"loss": 0.0, "mean_reward": 0.0}
+            return {"loss": 0.0, "mean_reward": 0.0, "reward_std": 0.0}, tokens
 
         policy_lps, ref_lps = [], []
         for p_ids, r_ids in zip(prompt_ids_list, response_ids_list):
@@ -159,42 +179,106 @@ class BaseTrainer(ABC):
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
         self.optimizer.step()
 
-        return {"loss": loss.item(), "mean_reward": sum(rewards) / len(rewards)}
+        reward_t = torch.tensor(rewards, dtype=torch.float32)
+        return {
+            "loss": loss.item(),
+            "mean_reward": reward_t.mean().item(),
+            "reward_std": reward_t.std().item(),
+        }, tokens
 
-    def train(self, dataset, eval_dataset=None) -> list[dict]:
+    def train(self, dataset, eval_dataset=None) -> tuple[list[dict], ConvergenceResult | None]:
         from ..evaluator import evaluate_gsm8k
 
+        method_name = self.__class__.__name__.replace("Trainer", "").replace("Wrapper", "").lower()
         out_dir = Path(self.config.output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         log_path = out_dir / "metrics.jsonl"
+
         metrics_log = []
+        tokens_seen = 0
+        convergence: ConvergenceResult | None = None
+        t_start = time.perf_counter()
         step = 0
 
         while step < self.config.num_steps:
             for i in range(0, len(dataset), self.config.batch_size):
                 if step >= self.config.num_steps:
                     break
+
+                t_step = time.perf_counter()
                 batch = dataset[i: i + self.config.batch_size]
-                step_metrics = self.train_step(batch["prompt"], batch["answer"])
+                step_metrics, step_tokens = self.train_step(batch["prompt"], batch["answer"])
+                tokens_seen += step_tokens
+
                 step_metrics["step"] = step
+                step_metrics["tokens_seen"] = tokens_seen
+                step_metrics["wall_clock_seconds"] = time.perf_counter() - t_start
+                step_metrics["step_seconds"] = time.perf_counter() - t_step
 
                 if step % self.config.eval_every == 0 and eval_dataset is not None:
-                    eval_result = evaluate_gsm8k(
-                        self.model, self.tokenizer, max_samples=200
-                    )
+                    eval_result = evaluate_gsm8k(self.model, self.tokenizer, max_samples=200)
                     step_metrics.update(eval_result)
 
-                metrics_log.append(step_metrics)
-                print(f"step={step} " + " ".join(f"{k}={v:.4f}" for k, v in step_metrics.items() if isinstance(v, float)))
+                    acc = step_metrics.get("gsm8k_accuracy", 0.0)
+                    elapsed = step_metrics["wall_clock_seconds"]
+                    print(
+                        f"  step={step:>4}  acc={acc:.3f}  reward={step_metrics['mean_reward']:.3f}"
+                        f"  tokens={tokens_seen:,}  elapsed={elapsed/60:.1f}min",
+                        flush=True,
+                    )
 
-                if step % self.config.save_every == 0:
+                    if (
+                        self.config.target_accuracy is not None
+                        and convergence is None
+                        and acc >= self.config.target_accuracy
+                    ):
+                        convergence = ConvergenceResult(
+                            method=method_name,
+                            target_accuracy=self.config.target_accuracy,
+                            reached_target=True,
+                            steps_to_target=step,
+                            wall_clock_seconds_to_target=elapsed,
+                            tokens_seen_to_target=tokens_seen,
+                            final_accuracy=acc,
+                            final_step=step,
+                            final_wall_clock_seconds=elapsed,
+                        )
+                        print(f"  *** Target {self.config.target_accuracy:.3f} reached at step {step} ({elapsed/60:.1f}min) ***", flush=True)
+                else:
+                    print(
+                        f"  step={step:>4}  reward={step_metrics['mean_reward']:.3f}"
+                        f"  std={step_metrics['reward_std']:.3f}  elapsed={step_metrics['wall_clock_seconds']/60:.1f}min",
+                        flush=True,
+                    )
+
+                metrics_log.append(step_metrics)
+
+                if step % self.config.save_every == 0 and step > 0:
                     self.model.save_pretrained(out_dir / f"step-{step}")
 
                 step += 1
+
+        elapsed_total = time.perf_counter() - t_start
+        final_acc = next(
+            (m["gsm8k_accuracy"] for m in reversed(metrics_log) if "gsm8k_accuracy" in m), 0.0
+        )
+
+        if convergence is None:
+            convergence = ConvergenceResult(
+                method=method_name,
+                target_accuracy=self.config.target_accuracy or 0.0,
+                reached_target=False,
+                steps_to_target=None,
+                wall_clock_seconds_to_target=None,
+                tokens_seen_to_target=None,
+                final_accuracy=final_acc,
+                final_step=step,
+                final_wall_clock_seconds=elapsed_total,
+            )
 
         with open(log_path, "w") as f:
             for m in metrics_log:
                 f.write(json.dumps(m) + "\n")
 
         self.model.save_pretrained(out_dir / "final")
-        return metrics_log
+        return metrics_log, convergence
