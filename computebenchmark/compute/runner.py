@@ -107,10 +107,14 @@ def run(config: ComputeConfig) -> list[ThroughputResult]:
     monitor = GPUMonitor()
     results = []
 
+    total = len(config.batch_sizes) * len(config.prompt_lengths) * 3
+    current = 0
+
     for batch_size in config.batch_sizes:
         for seq_len in config.prompt_lengths:
             input_ids = torch.randint(100, 50000, (batch_size, seq_len), device="cuda")
 
+            print(f"\n[{config.model_id}]  bs={batch_size}  seq={seq_len}  — warming up...", flush=True)
             for _ in range(config.warmup_iters):
                 with torch.no_grad():
                     model(input_ids)
@@ -120,10 +124,14 @@ def run(config: ComputeConfig) -> list[ThroughputResult]:
                 ("prefill", _measure_prefill, {}),
                 ("decode", _measure_decode, {"gen_len": config.generation_length}),
             ]:
+                current += 1
+                print(f"  [{current}/{total}] {phase:<8} bs={batch_size} seq={seq_len} ...", end=" ", flush=True)
                 tps, peak_vram, snaps = fn(
                     model, input_ids, monitor, config.bench_iters, **kwargs
                 )
+                torch.cuda.empty_cache()
                 mean_util = sum(s.gpu_util_pct for s in snaps) / len(snaps)
+                print(f"{tps:>10.1f} tok/s  {peak_vram:>8.0f} MB  gpu={mean_util:.0f}%", flush=True)
                 results.append(
                     ThroughputResult(
                         model_id=config.model_id,
@@ -138,12 +146,18 @@ def run(config: ComputeConfig) -> list[ThroughputResult]:
                     )
                 )
 
-            # training throughput requires grad
+            torch.cuda.empty_cache()
+
+            current += 1
+            train_seq_len = min(seq_len, 512)
+            train_input_ids = input_ids[:, :train_seq_len]
+            print(f"  [{current}/{total}] {'train':<8} bs={batch_size} seq={train_seq_len} ...", end=" ", flush=True)
             model.train()
             tps, peak_vram, snaps = _measure_train(
-                model, input_ids, monitor, config.bench_iters
+                model, train_input_ids, monitor, config.bench_iters
             )
             mean_util = sum(s.gpu_util_pct for s in snaps) / len(snaps)
+            print(f"{tps:>10.1f} tok/s  {peak_vram:>8.0f} MB  gpu={mean_util:.0f}%", flush=True)
             results.append(
                 ThroughputResult(
                     model_id=config.model_id,
